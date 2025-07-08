@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   AppBar,
   Toolbar,
@@ -22,7 +22,9 @@ import {
   Collapse,
   IconButton,
   Tabs,
-  Tab
+  Tab,
+  Switch,
+  FormControlLabel
 } from '@mui/material';
 import CytoscapeComponent from 'react-cytoscapejs';
 import Popover from '@mui/material/Popover';
@@ -44,10 +46,15 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import GraphViewer from './components/GraphViewer';
 import dynamic from 'next/dynamic';
 import MenuIcon from '@mui/icons-material/Menu';
-import { getConnections, saveConnection, Connection } from '../utils/connectionStorage';
+import { getConnections, saveConnection, deleteConnection, updateConnection, Connection } from '../utils/connectionStorage';
 import { v4 as uuidv4 } from 'uuid';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
+import Console from './components/Console';
+import ErrorBoundary from './components/ErrorBoundary';
+import ConnectionForm from './components/ConnectionForm';
 const ReactJson = dynamic(() => import('react-json-view'), { ssr: false });
 
 const DEFAULT_SERVER_URL = 'ws://localhost:8182/gremlin';
@@ -121,6 +128,42 @@ export default function Home() {
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
 
+  // Console log state
+  const [consoleOpen, setConsoleOpen] = useState(false);
+  const [consoleLogs, setConsoleLogs] = useState<{
+    id: string;
+    time: string;
+    type: 'query' | 'connection' | 'error' | 'info';
+    message: string;
+    endpoint?: string;
+    query?: string;
+    success?: boolean;
+    details?: any;
+  }[]>([]);
+
+  const logContainerRef = useRef<HTMLDivElement>(null);
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+
+  // Auto-scroll to top when console opens or logs change (newest at top)
+  useEffect(() => {
+    if (consoleOpen && logContainerRef.current) {
+      logContainerRef.current.scrollTop = 0;
+    }
+  }, [consoleOpen, consoleLogs]);
+
+  // Add a log entry (latest at the top)
+  const logToConsole = (entry: Omit<typeof consoleLogs[0], 'id' | 'time'>) => {
+    const now = new Date();
+    setConsoleLogs(logs => [
+      {
+        id: now.getTime().toString(),
+        time: now.toLocaleTimeString(),
+        ...entry,
+      },
+      ...logs,
+    ]);
+  };
+
   // Load history from localStorage on mount
   useEffect(() => {
     const stored = localStorage.getItem(QUERY_HISTORY_KEY);
@@ -169,6 +212,13 @@ export default function Home() {
       setQueryError(null);
       setLoading(true);
       setConnectionStatus('loading');
+      // Log connection attempt
+      logToConsole({
+        type: 'connection',
+        message: `Connecting to ${selectedConnection.name}`,
+        endpoint: selectedConnection.details?.url,
+        success: undefined,
+      });
       fetchSchema();
     }
   }, [selectedConnectionId]);
@@ -177,6 +227,7 @@ export default function Home() {
     if (!selectedConnection) return;
     setLoading(true);
     setError(null);
+    const start = Date.now();
     try {
       const body: any = { type: selectedConnection.type, ...selectedConnection.details };
       const res = await fetch('/api/gremlin', {
@@ -185,16 +236,49 @@ export default function Home() {
         body: JSON.stringify(body),
       });
       const data = await res.json();
+      const execTime = Date.now() - start;
       if (data.success) {
         setSchema(data.result);
         setConnectionStatus('ok');
+        logToConsole({
+          type: 'connection',
+          message: `Connected to ${selectedConnection.name}`,
+          endpoint: selectedConnection.details?.url,
+          success: true,
+          details: data.result,
+          query: undefined,
+        });
       } else {
         setError(data.error || 'Failed to fetch schema');
         setConnectionStatus('error');
+        logToConsole({
+          type: 'connection',
+          message: `Connection failed: ${data.error || 'Unknown error'}`,
+          endpoint: selectedConnection.details?.url,
+          success: false,
+          details: data.error,
+          query: undefined,
+        });
       }
+      logToConsole({
+        type: 'info',
+        message: `Schema fetch execution time: ${execTime} ms`,
+        endpoint: selectedConnection.details?.url,
+        success: data.success,
+        details: undefined,
+        query: undefined,
+      });
     } catch (err) {
       setError((err as Error).message);
       setConnectionStatus('error');
+      logToConsole({
+        type: 'error',
+        message: `Connection error: ${(err as Error).message}`,
+        endpoint: selectedConnection.details?.url,
+        success: false,
+        details: err,
+        query: undefined,
+      });
     } finally {
       setLoading(false);
     }
@@ -238,12 +322,12 @@ export default function Home() {
     setQueryLoading(true);
     setQueryError(null);
     setQueryResult(null);
-    // Add to history if not duplicate and not empty
+    const start = Date.now();
     setQueryHistory(prev => {
       const trimmed = query.trim();
       if (!trimmed) return prev;
-      if (prev[0] === trimmed) return prev; // avoid consecutive duplicates
-      const next = [trimmed, ...prev.filter(q => q !== trimmed)].slice(0, 20); // max 20
+      if (prev[0] === trimmed) return prev;
+      const next = [trimmed, ...prev.filter(q => q !== trimmed)].slice(0, 20);
       return next;
     });
     try {
@@ -254,13 +338,38 @@ export default function Home() {
         body: JSON.stringify(body),
       });
       const data = await res.json();
+      const execTime = Date.now() - start;
       if (data.success) {
         setQueryResult(data.result);
+        logToConsole({
+          type: 'query',
+          message: `Query executed successfully (${execTime} ms)`,
+          endpoint: selectedConnection.details?.url,
+          query,
+          success: true,
+          details: data.result,
+        });
       } else {
         setQueryError(data.error || 'Query failed');
+        logToConsole({
+          type: 'query',
+          message: `Query failed (${execTime} ms): ${data.error || 'Unknown error'}`,
+          endpoint: selectedConnection.details?.url,
+          query,
+          success: false,
+          details: data.error,
+        });
       }
     } catch (err) {
       setQueryError((err as Error).message);
+      logToConsole({
+        type: 'error',
+        message: `Query error: ${(err as Error).message}`,
+        endpoint: selectedConnection.details?.url,
+        query,
+        success: false,
+        details: err,
+      });
     } finally {
       setQueryLoading(false);
     }
@@ -349,285 +458,333 @@ export default function Home() {
     setNewConn({ name: '', type: 'local', url: '', accessKey: '', dbName: '', graphName: '' });
   };
 
+  const [editConnId, setEditConnId] = useState<string | null>(null);
+  const [editConn, setEditConn] = useState<any>(null);
+
+  const handleDeleteConnection = (id: string) => {
+    deleteConnection(id);
+    setConnections(getConnections());
+    if (selectedConnectionId === id) setSelectedConnectionId(null);
+  };
+  const handleEditConnection = (conn: Connection) => {
+    setEditConnId(conn.id);
+    setEditConn({ ...conn, ...conn.details });
+  };
+  const handleSaveEditConnection = () => {
+    if (!editConnId || !editConn) return;
+    const updated: Connection = {
+      id: editConnId,
+      name: editConn.name,
+      type: editConn.type,
+      details:
+        editConn.type === 'local'
+          ? { url: editConn.url }
+          : { url: editConn.url, accessKey: editConn.accessKey, dbName: editConn.dbName, graphName: editConn.graphName },
+    };
+    updateConnection(editConnId, updated);
+    setConnections(getConnections());
+    setEditConnId(null);
+    setEditConn(null);
+  };
+  const handleCancelEdit = () => {
+    setEditConnId(null);
+    setEditConn(null);
+  };
+
+  // Add state for tooltip toggle
+  const [showNodeTooltips, setShowNodeTooltips] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('showNodeTooltips');
+      return stored === null ? true : stored === 'true';
+    }
+    return true;
+  });
+  // Persist toggle to localStorage
+  useEffect(() => {
+    localStorage.setItem('showNodeTooltips', String(showNodeTooltips));
+  }, [showNodeTooltips]);
+
   return (
-    <Box>
-      <AppBar position="sticky" elevation={0} sx={{ background: 'rgba(255,255,255,0.97)', boxShadow: 1, borderBottom: '1px solid #e0e0e0', zIndex: 1201 }}>
-        <Toolbar sx={{ flexWrap: 'wrap', gap: 2, justifyContent: 'space-between', alignItems: 'center', minHeight: 88 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mr: 4 }}>
-            {/* Burger menu */}
-            <IconButton edge="start" color="inherit" aria-label="menu" onClick={() => setDrawerOpen(open => !open)}>
-              <MenuIcon sx={{ color: 'black' }} />
-            </IconButton>
-            <Typography variant="h5" sx={{ fontWeight: 700, color: 'primary.main', letterSpacing: 1 }}>
-              GXplorer
-            </Typography>
-          </Box>
-          {/* Connection select dropdown */}
-          <Box sx={{ minWidth: 260, display: 'flex', alignItems: 'center', gap: 2 }}>
-            <FormControl fullWidth size="small">
-              <InputLabel id="connection-select-label">Connection</InputLabel>
-              <Select
-                labelId="connection-select-label"
-                value={selectedConnectionId || ''}
-                label="Connection"
-                onChange={e => setSelectedConnectionId(e.target.value)}
-              >
-                <MenuItem value="">Select Connection</MenuItem>
-                {connections.map(conn => (
-                  <MenuItem key={conn.id} value={conn.id}>
-                    {conn.name} ({conn.type})
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            {connectionStatus === 'loading' && (
-              <CircularProgress size={20} sx={{ ml: 1 }} />
-            )}
-            {connectionStatus === 'ok' && (
-              <FiberManualRecordIcon sx={{ color: 'green', ml: 1, fontSize: 20, verticalAlign: 'middle' }} />
-            )}
-            {connectionStatus === 'error' && (
-              <FiberManualRecordIcon sx={{ color: 'red', ml: 1, fontSize: 20, verticalAlign: 'middle' }} />
-            )}
-          </Box>
-        </Toolbar>
-      </AppBar>
-      {/* Drawer for connection management */}
-      <Drawer anchor="left" open={drawerOpen} onClose={() => { setDrawerOpen(false); setAddMode(false); }}>
-        <Box sx={{ width: 340, p: 3 }}>
-          <Typography variant="h6" gutterBottom>Connections</Typography>
-          {/* Connection list */}
-          <Box sx={{ mb: 2 }}>
-            {connections.length === 0 ? (
-              <Typography color="text.secondary">No connections saved.</Typography>
-            ) : (
-              connections.map(conn => (
-                <Box
-                  key={conn.id}
-                  sx={{
-                    mb: 1,
-                    p: 1,
-                    borderRadius: 1,
-                    background: '#f5f5f5',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between'
-                  }}
-                >
-                  <Box>
-                    <Typography fontWeight={600}>{conn.name}</Typography>
-                    <Typography variant="caption" color="text.secondary">{conn.type}</Typography>
-                  </Box>
-                </Box>
-              ))
-            )}
-          </Box>
-          {addMode ? (
-            <Box component="form" sx={{ display: 'flex', flexDirection: 'column', gap: 2 }} onSubmit={e => { e.preventDefault(); handleAddConnection(); }}>
-              <Typography variant="subtitle1">Add Connection</Typography>
-              <input
-                type="text"
-                placeholder="Name"
-                value={newConn.name}
-                onChange={e => setNewConn({ ...newConn, name: e.target.value })}
-                style={{ padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
-                required
-              />
-              <select
-                value={newConn.type}
-                onChange={e => setNewConn({ ...newConn, type: e.target.value })}
-                style={{ padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
-              >
-                <option value="local">Local Gremlin</option>
-                <option value="cosmos">Azure Cosmos Gremlin</option>
-              </select>
-              {/* Dynamic fields */}
-              {newConn.type === 'local' ? (
-                <input
-                  type="text"
-                  placeholder="Gremlin Server URL"
-                  value={newConn.url}
-                  onChange={e => setNewConn({ ...newConn, url: e.target.value })}
-                  style={{ padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
-                  required
-                />
-              ) : (
-                <>
-                  <input
-                    type="text"
-                    placeholder="Cosmos Gremlin URL"
-                    value={newConn.url}
-                    onChange={e => setNewConn({ ...newConn, url: e.target.value })}
-                    style={{ padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
-                    required
-                  />
-                  <input
-                    type="text"
-                    placeholder="Access Key"
-                    value={newConn.accessKey}
-                    onChange={e => setNewConn({ ...newConn, accessKey: e.target.value })}
-                    style={{ padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
-                    required
-                  />
-                  <input
-                    type="text"
-                    placeholder="Database Name"
-                    value={newConn.dbName}
-                    onChange={e => setNewConn({ ...newConn, dbName: e.target.value })}
-                    style={{ padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
-                    required
-                  />
-                  <input
-                    type="text"
-                    placeholder="Graph Name (Collection)"
-                    value={newConn.graphName}
-                    onChange={e => setNewConn({ ...newConn, graphName: e.target.value })}
-                    style={{ padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
-                    required
-                  />
-                </>
-              )}
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                <Button type="submit" variant="contained" color="primary" fullWidth>
-                  Save
-                </Button>
-                <Button variant="outlined" color="secondary" fullWidth onClick={() => setAddMode(false)}>
-                  Cancel
-                </Button>
-              </Box>
-            </Box>
-          ) : (
-            <Button variant="contained" color="primary" fullWidth onClick={() => setAddMode(true)}>
-              + Add Connection
-            </Button>
-          )}
-        </Box>
-      </Drawer>
-      <Box sx={{ p:4, height: 'calc(100vh - 88px)' }}>
-        <Grid container spacing={2} sx={{ height: '100%' }}>
-          <Grid item xs={6} md={6} sx={{ height: '100%' }}>
-
-            {/* Query Editor below header controls */}
-            <Paper elevation={3} sx={{ p: 3, mb: 4 }}>
-              <Typography variant="h6" gutterBottom>
-                Query Editor
+    <ErrorBoundary logToConsole={logToConsole}>
+      <Box>
+        <AppBar position="sticky" elevation={0} sx={{ background: 'rgba(255,255,255,0.97)', boxShadow: 1, borderBottom: '1px solid #e0e0e0', zIndex: 1201 }}>
+          <Toolbar sx={{ flexWrap: 'wrap', gap: 2, justifyContent: 'space-between', alignItems: 'center', minHeight: 88 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mr: 4 }}>
+              {/* Burger menu */}
+              <IconButton edge="start" color="inherit" aria-label="menu" onClick={() => setDrawerOpen(open => !open)}>
+                <MenuIcon sx={{ color: 'black' }} />
+              </IconButton>
+              <Typography variant="h5" sx={{ fontWeight: 700, color: 'primary.main', letterSpacing: 1 }}>
+                GXplorer
               </Typography>
-              {/* Query History */}
-              {queryHistory.length > 0 && (
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary', display: 'flex', alignItems: 'center' }}>
-                    History
-                    {queryHistory.length > 1 && (
-                      <IconButton size="small" onClick={() => setHistoryOpen(o => !o)} sx={{ ml: 1 }}>
-                        {historyOpen ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-                      </IconButton>
-                    )}
-                  </Typography>
-                  {/* Latest history always visible */}
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                    <Button
-                      key={queryHistory[0] + 'latest'}
-                      size="small"
-                      variant={queryHistory[0] === query ? 'contained' : 'outlined'}
-                      color="secondary"
-                      sx={{ fontFamily: 'monospace', textTransform: 'none', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                      onClick={() => setQuery(queryHistory[0])}
-                    >
-                      {queryHistory[0].length > 60 ? queryHistory[0].slice(0, 57) + '...' : queryHistory[0]}
-                    </Button>
-                  </Box>
-                  {/* Collapsible rest of history */}
-                  {queryHistory.length > 1 && (
-                    <Collapse in={historyOpen}>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
-                        {queryHistory.slice(1).map((q, i) => (
-                          <Button
-                            key={q + i}
-                            size="small"
-                            variant={q === query ? 'contained' : 'outlined'}
-                            color="secondary"
-                            sx={{ fontFamily: 'monospace', textTransform: 'none', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                            onClick={() => setQuery(q)}
-                          >
-                            {q.length > 60 ? q.slice(0, 57) + '...' : q}
-                          </Button>
-                        ))}
-                      </Box>
-                    </Collapse>
-                  )}
-                </Box>
+            </Box>
+            {/* Connection select dropdown */}
+            <Box sx={{ minWidth: 260, display: 'flex', alignItems: 'center', gap: 2 }}>
+              {connections.length === 0 ? (
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={() => {
+                    setDrawerOpen(true);
+                    setAddMode(true);
+                  }}
+                  fullWidth
+                >
+                  Add Connection
+                </Button>
+              ) : (
+                <FormControl fullWidth size="small">
+                  <InputLabel id="connection-select-label">Connection</InputLabel>
+                  <Select
+                    labelId="connection-select-label"
+                    value={selectedConnectionId || ''}
+                    label="Connection"
+                    onChange={e => setSelectedConnectionId(e.target.value)}
+                  >
+                    <MenuItem value="">Select Connection</MenuItem>
+                    {connections.map(conn => (
+                      <MenuItem key={conn.id} value={conn.id}>
+                        {conn.name} ({conn.type})
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
               )}
-              <QueryBox
-                query={query}
-                setQuery={setQuery}
-                executeQuery={executeQuery}
-                queryLoading={queryLoading}
-                queryError={queryError}
-                schema={schema}
-              />
-            </Paper>
-            {/* Panels below */}
-            <Box display={{ xs: 'block', md: 'flex' }} gap={3}>
-              {/* Left Panel: Editor & Controls */}
-              <Box flex={1.3} minWidth={420}>
-                <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
-                  {/* Tabs for Query Result, Schema, Node Data */}
-                  <Tabs value={tabIndex} onChange={(_, v) => setTabIndex(v)} aria-label="Result Tabs">
-                    <Tab label="Query Result" />
-                    <Tab label="Schema" />
-                    <Tab label="Node Data" />
-                  </Tabs>
-                  <Box sx={{ mt: 2 }}>
-                    {tabIndex === 0 && <QueryResult queryResult={queryResult} />}
-                    {tabIndex === 1 && (
-                      loading ? (
-                        <Box display="flex" alignItems="center" justifyContent="center" minHeight={120}>
-                          <CircularProgress />
+              {connectionStatus === 'loading' && (
+                <CircularProgress size={20} sx={{ ml: 1 }} />
+              )}
+              {connectionStatus === 'ok' && (
+                <FiberManualRecordIcon sx={{ color: 'green', ml: 1, fontSize: 20, verticalAlign: 'middle' }} />
+              )}
+              {connectionStatus === 'error' && (
+                <FiberManualRecordIcon sx={{ color: 'red', ml: 1, fontSize: 20, verticalAlign: 'middle' }} />
+              )}
+            </Box>
+          </Toolbar>
+        </AppBar>
+        {/* Drawer for connection management */}
+        <Drawer anchor="left" open={drawerOpen} onClose={() => { setDrawerOpen(false); setAddMode(false); }}>
+          <Box sx={{ width: 340, p: 3 ,  mt: 2}}>
+            <Typography variant="h6" gutterBottom>Connections</Typography>
+            {/* Connection list */}
+            <Box sx={{ mb: 2 }}>
+              {connections.length === 0 ? (
+                <Typography color="text.secondary">No connections saved.</Typography>
+              ) : (
+                connections.map(conn => (
+                  <Box
+                    key={conn.id}
+                    sx={{
+                      mb: 1,
+                      p: 1,
+                      borderRadius: 1,
+                      background: '#f5f5f5',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}
+                  >
+                    {editConnId === conn.id ? (
+                      <ConnectionForm
+                        mode="edit"
+                        conn={editConn}
+                        setConn={setEditConn}
+                        onSave={handleSaveEditConnection}
+                        onCancel={handleCancelEdit}
+                      />
+                    ) : (
+                      <>
+                        <Box>
+                          <Typography fontWeight={600}>{conn.name}</Typography>
+                          <Typography variant="caption" color="text.secondary">{conn.type}</Typography>
                         </Box>
-                      ) : (
-                        <SchemaBox schema={schema} />
-                      )
-                    )}
-                    {tabIndex === 2 && (
-                      selectedNodeData ? (
-                        <ReactJson
-                          src={selectedNodeData}
-                          collapsed={1}
-                          name={null}
-                          enableClipboard={true}
-                          displayDataTypes={false}
-                          displayObjectSize={false}
-                          style={{ fontSize: 13 }}
-                        />
-                      ) : (
-                        <Alert severity="info">No node selected. Click a node in the graph to view its data.</Alert>
-                      )
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          <Button size="small" variant="outlined" color="primary" onClick={() => handleEditConnection(conn)} aria-label="Edit connection" sx={{ minWidth: 0, p: 0.5 }}>
+                            <EditIcon fontSize="small" sx={{ fontSize: 16 }} />
+                          </Button>
+                          <Button size="small" variant="outlined" color="error" onClick={() => handleDeleteConnection(conn.id)} aria-label="Delete connection" sx={{ minWidth: 0, p: 0.5 }}>
+                            <DeleteIcon fontSize="small" sx={{ fontSize: 16 }} />
+                          </Button>
+                        </Box>
+                      </>
                     )}
                   </Box>
-                </Paper>
-              </Box>
+                ))
+              )}
             </Box>
-
-          </Grid>
-          <Grid item xs={6} md={6} sx={{ height: '100%' }}>
-
-            <Box sx={{ height: '100%' }}>
-              <GraphViewer
-                data={queryResult}
-                loading={queryLoading}
-                error={queryError}
-                setSelectedNodeData={data => {
-                  setSelectedNodeData(data);
-                  setTabIndex(2); // Switch to Node Data tab
-                }}
+            {addMode ? (
+              <ConnectionForm
+                mode="add"
+                conn={newConn}
+                setConn={setNewConn}
+                onSave={handleAddConnection}
+                onCancel={() => setAddMode(false)}
+              />
+            ) : (
+              <Button variant="contained" color="primary" fullWidth onClick={() => setAddMode(true)}>
+                + Add Connection
+              </Button>
+            )}
+            {/* Settings section */}
+            <Box sx={{ mt: 4, borderTop: '1px solid #eee', pt: 2 }}>
+              <Typography variant="subtitle1" sx={{ mb: 1 }}>Settings</Typography>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={showNodeTooltips}
+                    onChange={e => setShowNodeTooltips(e.target.checked)}
+                    color="primary"
+                  />
+                }
+                label="Show Node Tooltips"
               />
             </Box>
+          </Box>
+        </Drawer>
+        <Box sx={{ p:4, height: 'calc(100vh - 88px)' }}>
+          <Grid container spacing={2} sx={{ height: '100%' }}>
+            <Grid item xs={6} md={6} sx={{ height: '100%' }}>
 
+              {/* Query Editor below header controls */}
+              <Paper elevation={3} sx={{ p: 3, mb: 4 }}>
+                <Typography variant="h6" gutterBottom>
+                  Query Editor
+                </Typography>
+                {/* Query History */}
+                {queryHistory.length > 0 && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary', display: 'flex', alignItems: 'center' }}>
+                      History
+                      {queryHistory.length > 1 && (
+                        <IconButton size="small" onClick={() => setHistoryOpen(o => !o)} sx={{ ml: 1 }}>
+                          {historyOpen ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                        </IconButton>
+                      )}
+                    </Typography>
+                    {/* Latest history always visible */}
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                      <Button
+                        key={queryHistory[0] + 'latest'}
+                        size="small"
+                        variant={queryHistory[0] === query ? 'contained' : 'outlined'}
+                        color="secondary"
+                        sx={{ fontFamily: 'monospace', textTransform: 'none', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                        onClick={() => setQuery(queryHistory[0])}
+                      >
+                        {queryHistory[0].length > 60 ? queryHistory[0].slice(0, 57) + '...' : queryHistory[0]}
+                      </Button>
+                    </Box>
+                    {/* Collapsible rest of history */}
+                    {queryHistory.length > 1 && (
+                      <Collapse in={historyOpen}>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+                          {queryHistory.slice(1).map((q, i) => (
+                            <Button
+                              key={q + i}
+                              size="small"
+                              variant={q === query ? 'contained' : 'outlined'}
+                              color="secondary"
+                              sx={{ fontFamily: 'monospace', textTransform: 'none', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                              onClick={() => setQuery(q)}
+                            >
+                              {q.length > 60 ? q.slice(0, 57) + '...' : q}
+                            </Button>
+                          ))}
+                        </Box>
+                      </Collapse>
+                    )}
+                  </Box>
+                )}
+                <QueryBox
+                  query={query}
+                  setQuery={setQuery}
+                  executeQuery={executeQuery}
+                  queryLoading={queryLoading}
+                  queryError={queryError}
+                  schema={schema}
+                />
+              </Paper>
+              {/* Panels below */}
+              <Box display={{ xs: 'block', md: 'flex' }} gap={3}>
+                {/* Left Panel: Editor & Controls */}
+                <Box flex={1.3} minWidth={420}>
+                  <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
+                    {/* Tabs for Query Result, Schema, Node Data */}
+                    <Tabs value={tabIndex} onChange={(_, v) => setTabIndex(v)} aria-label="Result Tabs">
+                      <Tab label="Query Result" />
+                      <Tab label="Schema" />
+                      <Tab label="Node Data" />
+                    </Tabs>
+                    <Box sx={{ mt: 2 }}>
+                      {tabIndex === 0 && <QueryResult queryResult={queryResult} />}
+                      {tabIndex === 1 && (
+                        loading ? (
+                          <Box display="flex" alignItems="center" justifyContent="center" minHeight={120}>
+                            <CircularProgress />
+                          </Box>
+                        ) : (
+                          <SchemaBox schema={schema} />
+                        )
+                      )}
+                      {tabIndex === 2 && (
+                        selectedNodeData ? (
+                          <ReactJson
+                            src={selectedNodeData}
+                            collapsed={1}
+                            name={null}
+                            enableClipboard={true}
+                            displayDataTypes={false}
+                            displayObjectSize={false}
+                            style={{ fontSize: 13 }}
+                          />
+                        ) : (
+                          <Alert severity="info">No node selected. Click a node in the graph to view its data.</Alert>
+                        )
+                      )}
+                    </Box>
+                  </Paper>
+                </Box>
+              </Box>
+
+            </Grid>
+            <Grid item xs={6} md={6} sx={{ height: '100%' }}>
+
+              <Box sx={{ height: '100%' }}>
+                {queryLoading ? (
+                  <Box display="flex" justifyContent="center" alignItems="center" minHeight={300}><CircularProgress /></Box>
+                ) : queryError ? (
+                  <Alert severity="error">{queryError}</Alert>
+                ) : queryResult && (Array.isArray(queryResult) ? queryResult.length > 0 : typeof queryResult === 'object' && Object.keys(queryResult).length > 0) ? (
+                  <GraphViewer
+                    data={queryResult}
+                    loading={queryLoading}
+                    error={queryError}
+                    setSelectedNodeData={data => {
+                      setSelectedNodeData(data);
+                      setTabIndex(2); // Switch to Node Data tab
+                    }}
+                    showNodeTooltips={showNodeTooltips}
+                  />
+                ) : (
+                  <Alert severity="info">No graph data to display.</Alert>
+                )}
+              </Box>
+
+            </Grid>
           </Grid>
-        </Grid>
 
+        </Box>
+        {/* Bottom Console Panel */}
+        <Console
+          logs={consoleLogs}
+          expandedLogId={expandedLogId}
+          setExpandedLogId={setExpandedLogId}
+          open={consoleOpen}
+          setOpen={setConsoleOpen}
+          logContainerRef={logContainerRef}
+        />
       </Box>
-    </Box>
+    </ErrorBoundary>
   );
 }
 
