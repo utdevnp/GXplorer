@@ -9,6 +9,7 @@ interface GraphViewerProps {
   loading?: boolean;
   error?: string | null;
   setSelectedNodeData?: (data: any) => void;
+  showNodeTooltips?: boolean;
 }
 
 const labelColorPalette: string[] = [
@@ -41,11 +42,11 @@ const isNode = (item: any) =>
   item.id !== undefined && item.label !== undefined && !isEdge(item);
 
 // Extract nodes and edges from various Gremlin result shapes
-function extractGraphElements(data: any) {
+function extractGraphElements(data: any): { nodes: any[]; edges: any[] } {
   let nodes: any[] = [];
   let edges: any[] = [];
-  const nodeMap: Record<string, any> = {};
-  const edgeMap: Record<string, any> = {};
+  const nodeMap: { [key: string]: any } = {};
+  const edgeMap: { [key: string]: any } = {};
 
   // Helper to add node if not already present
   function addNode(node: any) {
@@ -102,36 +103,36 @@ function extractGraphElements(data: any) {
     });
   }
 
-  nodes = Object.values(nodeMap);
-  edges = Object.values(edgeMap);
+  nodes = Object.values(nodeMap) as any[];
+  edges = Object.values(edgeMap) as any[];
   return { nodes, edges };
 }
 
 const getElementsFromData = (data: any): any[] => {
-  const { nodes, edges } = extractGraphElements(data);
+  const result = extractGraphElements(data);
+  const nodes: any[] = result.nodes;
+  const edges: any[] = result.edges;
+  const nodeIds = new Set(nodes.map((item: any) => String(item.id)));
   const nodeElements: any[] = nodes.map((item: any) => {
     const label = item.label || '';
     const id = item.id !== undefined ? String(item.id) : '';
-    // Only include id for Cytoscape's internal use, not for display or other data
     const nodeData: any = {
       label,
       color: getColorForLabel(label),
       ...Object.fromEntries(
-        Object.entries(item.properties || {}).map(([k, v]) => [k, v?.[0]?.value ?? ''])
+        Object.entries(item.properties as any || {}).map(([k, v]: [string, any]) => [k, v?.[0]?.value ?? ''])
       )
     };
     return {
       data: {
-        id, // Cytoscape requires an id field
+        id,
         ...nodeData
       }
     };
   });
   const edgeElements: any[] = edges.map((item: any) => {
-    // Gremlin edges may use outV/inV (id or object) or source/target
     let source = item.outV !== undefined ? item.outV : item.source;
     let target = item.inV !== undefined ? item.inV : item.target;
-    // If outV/inV are objects, use their id
     if (typeof source === 'object' && source && source.id) source = source.id;
     if (typeof target === 'object' && target && target.id) target = target.id;
     return {
@@ -141,19 +142,22 @@ const getElementsFromData = (data: any): any[] => {
         target: String(target),
         label: item.label,
         ...Object.fromEntries(
-          Object.entries(item.properties || {}).map(([k, v]) => [k, v?.[0]?.value ?? ''])
+          Object.entries(item.properties as any || {}).map(([k, v]: [string, any]) => [k, v?.[0]?.value ?? ''])
         )
       }
     };
-  });
+  }).filter(edge => nodeIds.has(edge.data.source) && nodeIds.has(edge.data.target));
   return [...nodeElements, ...edgeElements];
 };
 
-const GraphViewer: React.FC<GraphViewerProps> = ({ data, loading, error, setSelectedNodeData }) => {
+const GraphViewer: React.FC<GraphViewerProps> = ({ data, loading, error, setSelectedNodeData, showNodeTooltips = true }) => {
   const elements = useMemo(() => {
     if (!data) return [];
     const result = getElementsFromData(data);
-    return Array.isArray(result) ? result : [];
+    // Filter out any elements with missing id, source, or target
+    return Array.isArray(result)
+      ? result.filter(el => el && el.data && el.data.id && (el.data.source === undefined || el.data.source) && (el.data.target === undefined || el.data.target))
+      : [];
   }, [data]);
   const cyRef = useRef<any>(null);
   const [hoveredNode, setHoveredNode] = useState<any>(null);
@@ -375,7 +379,7 @@ const GraphViewer: React.FC<GraphViewerProps> = ({ data, loading, error, setSele
           ]}
         />
         {/* Tooltip for hovered node */}
-        {hoveredNode && hoveredPosition && (
+        {showNodeTooltips && hoveredNode && hoveredPosition && (
           <Box
             sx={{
               position: 'absolute',
