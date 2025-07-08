@@ -9,14 +9,25 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "react": "^19.0.0",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@monaco-editor/react": "4.7.0",
+    "@mui/icons-material": "^7.2.0",
+    "@mui/material": "^5.17.1",
+    "cytoscape": "^3.28.0",
+    "gremlin": "^3.7.3",
+    "monaco-editor": "^0.52.2",
+    "next": "15.3.4",
+    "react": "^19.1.0",
+    "react-cytoscapejs": "2.0.0",
     "react-dom": "^19.0.0",
-    "next": "15.3.4"
+    "react-json-view": "^1.21.3"
   },
   "devDependencies": {
-    "typescript": "^5",
+    "@types/gremlin": "^3.6.7",
     "@types/node": "^20",
     "@types/react": "^19",
-    "@types/react-dom": "^19"
+    "@types/react-dom": "^19",
+    "typescript": "^5"
   }
 }
