@@ -43,6 +43,11 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import GraphViewer from './components/GraphViewer';
 import dynamic from 'next/dynamic';
+import MenuIcon from '@mui/icons-material/Menu';
+import { getConnections, saveConnection, Connection } from '../utils/connectionStorage';
+import { v4 as uuidv4 } from 'uuid';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 const ReactJson = dynamic(() => import('react-json-view'), { ssr: false });
 
 const DEFAULT_SERVER_URL = 'ws://localhost:8182/gremlin';
@@ -103,6 +108,18 @@ export default function Home() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [tabIndex, setTabIndex] = useState(0);
   const [selectedNodeData, setSelectedNodeData] = useState<any>(null);
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [addMode, setAddMode] = useState(false);
+  const [newConn, setNewConn] = useState({
+    name: '',
+    type: 'local',
+    url: '',
+    accessKey: '',
+    dbName: '',
+    graphName: '',
+  });
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
 
   // Load history from localStorage on mount
   useEffect(() => {
@@ -119,23 +136,65 @@ export default function Home() {
     localStorage.setItem(QUERY_HISTORY_KEY, JSON.stringify(queryHistory));
   }, [queryHistory]);
 
+  // Load connections initially
+  useEffect(() => {
+    setConnections(getConnections());
+  }, []);
+  // Optionally, reload when drawer opens (if you want to catch changes from other tabs/windows)
+  useEffect(() => {
+    if (drawerOpen) {
+      setConnections(getConnections());
+    }
+  }, [drawerOpen]);
+
+  // When connections change, default to first connection if none selected
+  useEffect(() => {
+    if (connections.length > 0 && !selectedConnectionId) {
+      setSelectedConnectionId(connections[0].id);
+    }
+    if (connections.length === 0) {
+      setSelectedConnectionId(null);
+    }
+  }, [connections]);
+
+  // Get the selected connection object
+  const selectedConnection = connections.find(c => c.id === selectedConnectionId) || null;
+
+  // When selected connection changes, fetch schema and reset query state
+  useEffect(() => {
+    if (selectedConnection) {
+      setSchema(null);
+      setQueryResult(null);
+      setError(null);
+      setQueryError(null);
+      setLoading(true);
+      setConnectionStatus('loading');
+      fetchSchema();
+    }
+  }, [selectedConnectionId]);
+
   const fetchSchema = async () => {
+    if (!selectedConnection) return;
     setLoading(true);
     setError(null);
     try {
+      const body: any = { type: selectedConnection.type, ...selectedConnection.details };
       const res = await fetch('/api/gremlin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ serverUrl }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (data.success) {
         setSchema(data.result);
+        setConnectionStatus('ok');
       } else {
         setError(data.error || 'Failed to fetch schema');
+        setConnectionStatus('error');
       }
     } catch (err) {
       setError((err as Error).message);
+      setConnectionStatus('error');
     } finally {
       setLoading(false);
     }
@@ -143,7 +202,7 @@ export default function Home() {
 
   const createLabel = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newLabel) return;
+    if (!selectedConnection || !newLabel) return;
     setCreating(true);
     setError(null);
     let labelQuery = '';
@@ -153,10 +212,11 @@ export default function Home() {
       labelQuery = `v1 = graph.addVertex(); v2 = graph.addVertex(); v1.addEdge('${newLabel}', v2)`;
     }
     try {
+      const body: any = { type: selectedConnection.type, query: labelQuery, ...selectedConnection.details };
       const res = await fetch('/api/gremlin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ serverUrl, query: labelQuery }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (data.success) {
@@ -174,6 +234,7 @@ export default function Home() {
 
   const executeQuery = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedConnection) return;
     setQueryLoading(true);
     setQueryError(null);
     setQueryResult(null);
@@ -186,10 +247,11 @@ export default function Home() {
       return next;
     });
     try {
+      const body: any = { type: selectedConnection.type, query, ...selectedConnection.details };
       const res = await fetch('/api/gremlin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ serverUrl, query }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (data.success) {
@@ -271,67 +333,176 @@ export default function Home() {
     }
   };
 
+  const handleAddConnection = () => {
+    const conn: Connection = {
+      id: uuidv4(),
+      name: newConn.name,
+      type: newConn.type,
+      details:
+        newConn.type === 'local'
+          ? { url: newConn.url }
+          : { url: newConn.url, accessKey: newConn.accessKey, dbName: newConn.dbName, graphName: newConn.graphName },
+    };
+    saveConnection(conn);
+    setConnections(getConnections());
+    setAddMode(false);
+    setNewConn({ name: '', type: 'local', url: '', accessKey: '', dbName: '', graphName: '' });
+  };
+
   return (
     <Box>
       <AppBar position="sticky" elevation={0} sx={{ background: 'rgba(255,255,255,0.97)', boxShadow: 1, borderBottom: '1px solid #e0e0e0', zIndex: 1201 }}>
         <Toolbar sx={{ flexWrap: 'wrap', gap: 2, justifyContent: 'space-between', alignItems: 'center', minHeight: 88 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mr: 4 }}>
+            {/* Burger menu */}
+            <IconButton edge="start" color="inherit" aria-label="menu" onClick={() => setDrawerOpen(open => !open)}>
+              <MenuIcon sx={{ color: 'black' }} />
+            </IconButton>
             <Typography variant="h5" sx={{ fontWeight: 700, color: 'primary.main', letterSpacing: 1 }}>
               GXplorer
             </Typography>
           </Box>
-          <Paper elevation={1} sx={{ display: 'flex', alignItems: 'center', gap: 2, p: 2, flexWrap: 'wrap', minWidth: 420, boxShadow: 'none' }}>
-            {/* Connect to Gremlin Server (inline, compact) */}
-            <Box component="form" onSubmit={e => { e.preventDefault(); fetchSchema(); }} sx={{ display: 'flex', alignItems: 'center', gap: 1, background: 'none', boxShadow: 'none', p: 0 }}>
-              <TextField
-                label="Gremlin Server URL"
-                value={serverUrl}
-                onChange={e => setServerUrl(e.target.value)}
-                size="small"
-                sx={{ minWidth: 180, maxWidth: 240 }}
-              />
-              <Button
-                variant="contained"
-                color="primary"
-                onClick={fetchSchema}
-                disabled={loading}
-                sx={{ minWidth: 80, fontWeight: 600, fontSize: 14 }}
+          {/* Connection select dropdown */}
+          <Box sx={{ minWidth: 260, display: 'flex', alignItems: 'center', gap: 2 }}>
+            <FormControl fullWidth size="small">
+              <InputLabel id="connection-select-label">Connection</InputLabel>
+              <Select
+                labelId="connection-select-label"
+                value={selectedConnectionId || ''}
+                label="Connection"
+                onChange={e => setSelectedConnectionId(e.target.value)}
               >
-                {loading ? <CircularProgress size={16} /> : 'Fetch Schema'}
-              </Button>
-            </Box>
-            {error && (
-              <Alert severity="error" sx={{ ml: 1, py: 0.5, px: 1, fontSize: 13, alignItems: 'center', height: 36 }}>{error}</Alert>
+                <MenuItem value="">Select Connection</MenuItem>
+                {connections.map(conn => (
+                  <MenuItem key={conn.id} value={conn.id}>
+                    {conn.name} ({conn.type})
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            {connectionStatus === 'loading' && (
+              <CircularProgress size={20} sx={{ ml: 1 }} />
             )}
-            <Divider orientation="vertical" flexItem sx={{ mx: 2, height: 36, borderColor: '#e0e0e0' }} />
-            {/* Create New Label (inline, compact) */}
-            <Box component="form" onSubmit={createLabel} sx={{ display: 'flex', alignItems: 'center', gap: 1, background: 'none', boxShadow: 'none', p: 0 }}>
-              <FormControl size="small" sx={{ minWidth: 70 }}>
-                <InputLabel id="label-type-select">Type</InputLabel>
-                <Select
-                  labelId="label-type-select"
-                  value={labelType}
-                  label="Type"
-                  onChange={e => setLabelType(e.target.value as 'vertex' | 'edge')}
-                >
-                  <MenuItem value="vertex">Vertex</MenuItem>
-                  <MenuItem value="edge">Edge</MenuItem>
-                </Select>
-              </FormControl>
-              <TextField
-                label="Label name"
-                value={newLabel}
-                onChange={e => setNewLabel(e.target.value)}
-                size="small"
-                sx={{ minWidth: 90, maxWidth: 140 }}
-              />
-              <Button type="submit" variant="contained" color="secondary" disabled={creating || !newLabel} sx={{ minWidth: 64 }}>
-                {creating ? <CircularProgress size={14} /> : 'Create'}
-              </Button>
-            </Box>
-          </Paper>
+            {connectionStatus === 'ok' && (
+              <FiberManualRecordIcon sx={{ color: 'green', ml: 1, fontSize: 20, verticalAlign: 'middle' }} />
+            )}
+            {connectionStatus === 'error' && (
+              <FiberManualRecordIcon sx={{ color: 'red', ml: 1, fontSize: 20, verticalAlign: 'middle' }} />
+            )}
+          </Box>
         </Toolbar>
       </AppBar>
+      {/* Drawer for connection management */}
+      <Drawer anchor="left" open={drawerOpen} onClose={() => { setDrawerOpen(false); setAddMode(false); }}>
+        <Box sx={{ width: 340, p: 3 }}>
+          <Typography variant="h6" gutterBottom>Connections</Typography>
+          {/* Connection list */}
+          <Box sx={{ mb: 2 }}>
+            {connections.length === 0 ? (
+              <Typography color="text.secondary">No connections saved.</Typography>
+            ) : (
+              connections.map(conn => (
+                <Box
+                  key={conn.id}
+                  sx={{
+                    mb: 1,
+                    p: 1,
+                    borderRadius: 1,
+                    background: '#f5f5f5',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  <Box>
+                    <Typography fontWeight={600}>{conn.name}</Typography>
+                    <Typography variant="caption" color="text.secondary">{conn.type}</Typography>
+                  </Box>
+                </Box>
+              ))
+            )}
+          </Box>
+          {addMode ? (
+            <Box component="form" sx={{ display: 'flex', flexDirection: 'column', gap: 2 }} onSubmit={e => { e.preventDefault(); handleAddConnection(); }}>
+              <Typography variant="subtitle1">Add Connection</Typography>
+              <input
+                type="text"
+                placeholder="Name"
+                value={newConn.name}
+                onChange={e => setNewConn({ ...newConn, name: e.target.value })}
+                style={{ padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
+                required
+              />
+              <select
+                value={newConn.type}
+                onChange={e => setNewConn({ ...newConn, type: e.target.value })}
+                style={{ padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
+              >
+                <option value="local">Local Gremlin</option>
+                <option value="cosmos">Azure Cosmos Gremlin</option>
+              </select>
+              {/* Dynamic fields */}
+              {newConn.type === 'local' ? (
+                <input
+                  type="text"
+                  placeholder="Gremlin Server URL"
+                  value={newConn.url}
+                  onChange={e => setNewConn({ ...newConn, url: e.target.value })}
+                  style={{ padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
+                  required
+                />
+              ) : (
+                <>
+                  <input
+                    type="text"
+                    placeholder="Cosmos Gremlin URL"
+                    value={newConn.url}
+                    onChange={e => setNewConn({ ...newConn, url: e.target.value })}
+                    style={{ padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
+                    required
+                  />
+                  <input
+                    type="text"
+                    placeholder="Access Key"
+                    value={newConn.accessKey}
+                    onChange={e => setNewConn({ ...newConn, accessKey: e.target.value })}
+                    style={{ padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
+                    required
+                  />
+                  <input
+                    type="text"
+                    placeholder="Database Name"
+                    value={newConn.dbName}
+                    onChange={e => setNewConn({ ...newConn, dbName: e.target.value })}
+                    style={{ padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
+                    required
+                  />
+                  <input
+                    type="text"
+                    placeholder="Graph Name (Collection)"
+                    value={newConn.graphName}
+                    onChange={e => setNewConn({ ...newConn, graphName: e.target.value })}
+                    style={{ padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
+                    required
+                  />
+                </>
+              )}
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button type="submit" variant="contained" color="primary" fullWidth>
+                  Save
+                </Button>
+                <Button variant="outlined" color="secondary" fullWidth onClick={() => setAddMode(false)}>
+                  Cancel
+                </Button>
+              </Box>
+            </Box>
+          ) : (
+            <Button variant="contained" color="primary" fullWidth onClick={() => setAddMode(true)}>
+              + Add Connection
+            </Button>
+          )}
+        </Box>
+      </Drawer>
       <Box sx={{ p:4, height: 'calc(100vh - 88px)' }}>
         <Grid container spacing={2} sx={{ height: '100%' }}>
           <Grid item xs={6} md={6} sx={{ height: '100%' }}>
@@ -408,7 +579,15 @@ export default function Home() {
                   </Tabs>
                   <Box sx={{ mt: 2 }}>
                     {tabIndex === 0 && <QueryResult queryResult={queryResult} />}
-                    {tabIndex === 1 && <SchemaBox schema={schema} />}
+                    {tabIndex === 1 && (
+                      loading ? (
+                        <Box display="flex" alignItems="center" justifyContent="center" minHeight={120}>
+                          <CircularProgress />
+                        </Box>
+                      ) : (
+                        <SchemaBox schema={schema} />
+                      )
+                    )}
                     {tabIndex === 2 && (
                       selectedNodeData ? (
                         <ReactJson

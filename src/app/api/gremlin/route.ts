@@ -1,50 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { driver, process as gprocess } from 'gremlin';
-
-const COSMOSDB_KEY = process.env.COSMOSDB_GREMLIN_KEY;
-const COSMOSDB_DATABASE = process.env.COSMOSDB_DATABASE;
-const COSMOSDB_COLLECTION = process.env.COSMOSDB_COLLECTION;
+import { driver } from 'gremlin';
 
 // Enable gremlin debug logging
 process.env.DEBUG = 'gremlin*';
 
 export async function POST(req: NextRequest) {
   try {
-    let { serverUrl, query } = await req.json();
-    // Ensure the serverUrl is provided
-    if (!serverUrl) {
-      return NextResponse.json({ success: false, error: 'Missing serverUrl in request body.' });
-    }
-    // Ensure the serverUrl starts with ws:// or wss://
-    if (!/^wss?:\/\//.test(serverUrl)) {
-      // Default to wss:// if no protocol is provided
-      serverUrl = 'wss://' + serverUrl.replace(/^\/*/, '');
-    }
+    const body = await req.json();
+    const { type, url, query, accessKey, dbName, graphName } = body;
     let client;
-    // If connecting to Cosmos DB, use SASL authentication
-    if (serverUrl.includes('cosmos')) {
-      if (!COSMOSDB_KEY || !COSMOSDB_DATABASE || !COSMOSDB_COLLECTION) {
-        console.error('Missing Cosmos DB credentials:', {
-          COSMOSDB_KEY: !!COSMOSDB_KEY,
-          COSMOSDB_DATABASE,
-          COSMOSDB_COLLECTION
-        });
-        throw new Error('Missing Cosmos DB credentials in environment variables.');
+
+    switch (type) {
+      case 'local': {
+        if (!url) {
+          return NextResponse.json({ success: false, error: 'Missing url for local connection.' });
+        }
+        client = new driver.Client(url, { traversalSource: 'g' });
+        break;
       }
-      const resourcePath = `/dbs/${COSMOSDB_DATABASE}/colls/${COSMOSDB_COLLECTION}`;
-      console.log('[CosmosDB] Connecting:', { serverUrl, resourcePath });
-      client = new driver.Client(serverUrl, {
-        authenticator: new driver.auth.PlainTextSaslAuthenticator(
-          resourcePath,
-          COSMOSDB_KEY
-        ),
-        traversalSource: 'g',
-        rejectUnauthorized: true,
-        mimeType: 'application/vnd.gremlin-v2.0+json',
-      });
-    } else {
-      client = new driver.Client(serverUrl, { traversalSource: 'g' });
+      case 'cosmos': {
+        if (!url || !accessKey || !dbName || !graphName) {
+          return NextResponse.json({ success: false, error: 'Missing fields for cosmos connection.' });
+        }
+        const resourcePath = `/dbs/${dbName}/colls/${graphName}`;
+        client = new driver.Client(url, {
+          authenticator: new driver.auth.PlainTextSaslAuthenticator(
+            resourcePath,
+            accessKey
+          ),
+          traversalSource: 'g',
+          rejectUnauthorized: true,
+          mimeType: 'application/vnd.gremlin-v2.0+json',
+        });
+        break;
+      }
+      default:
+        return NextResponse.json({ success: false, error: 'Unsupported connection type.' });
     }
+
     let result;
     try {
       if (query) {
