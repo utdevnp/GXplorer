@@ -49,23 +49,14 @@ GXplorer was born out of this need. It now empowers my team to explore and analy
    npm install
    ```
 
-3. **Configure environment variables:**
-   - Create a `.env.local` file in the root directory.
-   - Add your Cosmos DB Gremlin credentials (if using Azure):
-     ```
-     COSMOSDB_GREMLIN_KEY=your-key
-     COSMOSDB_DATABASE=your-database
-     COSMOSDB_COLLECTION=your-collection
-     ```
-
-4. **Run the development server:**
+3. **Run the development server:**
    ```bash
    yarn dev
    # or
    npm run dev
    ```
 
-5. **Open [http://localhost:3000](http://localhost:3000) in your browser to use GXplorer.**
+4. **Open [http://localhost:3000](http://localhost:3000) in your browser to use GXplorer.**
 
 ---
 
