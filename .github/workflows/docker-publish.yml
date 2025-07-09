@@ -3,7 +3,9 @@ name: Build and Push Docker image
 on:
   push:
     tags:
-      - 'v*'  # Triggers on tags like v1.0.0, v2.1, etc.
+      - 'v*'
+    branches:
+      - main
 
 jobs:
   build-and-push:
