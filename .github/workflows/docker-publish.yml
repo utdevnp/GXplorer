@@ -42,5 +42,6 @@ jobs:
           context: .
           push: true
           tags: |
+            platforms: linux/amd64,linux/arm64
             ghcr.io/utdevnp/gxplorer:latest
             ghcr.io/utdevnp/gxplorer:${{ github.ref_name }} 
