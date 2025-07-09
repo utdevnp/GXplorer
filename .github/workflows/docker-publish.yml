@@ -42,5 +42,5 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }} 
+            ghcr.io/utdevnp/gxplorer:latest
+            ghcr.io/utdevnp/gxplorer:${{ github.ref_name }} 
