@@ -14,7 +14,7 @@ RUN yarn build
 # Production image, copy all the files and run next
 FROM node:18-alpine AS runner
 WORKDIR /app
-ENV NODE_ENV production
+ENV NODE_ENV=production
 
 # Copy built assets and node_modules
 COPY --from=builder /app/.next ./.next
