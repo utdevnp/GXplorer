@@ -26,15 +26,40 @@ GXplorer was born out of this need. It now empowers my team to explore and analy
 
 ---
 
-## Getting Started
+## Running GXplorer
 
-### Prerequisites
+### Option 1: Run Instantly with Docker
+
+You can run GXplorer instantly using Docker—no need to install Node.js or dependencies!
+
+#### Pull the image from GitHub Container Registry
+
+```bash
+docker pull ghcr.io/utdevnp/gxplorer:latest
+```
+
+#### Run GXplorer with Docker
+
+```bash
+docker run -p 3000:3000 ghcr.io/utdevnp/gxplorer:latest
+```
+
+Then open [http://localhost:3000](http://localhost:3000) in your browser.
+
+- All features are available in the Docker container.
+- You can connect to any Gremlin-compatible database from the running app.
+
+---
+
+### Option 2: Run Locally (Development)
+
+#### Prerequisites
 
 - **Node.js** (v18+ recommended)
 - **Yarn** or **npm**
 - Access credentials for your Gremlin-compatible graph database (e.g., Azure Cosmos DB Gremlin API)
 
-### Installation
+#### Installation & Running
 
 1. **Clone the repository:**
    ```bash
@@ -57,29 +82,6 @@ GXplorer was born out of this need. It now empowers my team to explore and analy
    ```
 
 4. **Open [http://localhost:3000](http://localhost:3000) in your browser to use GXplorer.**
-
----
-
-## Running with Docker
-
-You can run GXplorer instantly using Docker—no need to install Node.js or dependencies!
-
-### Pull the image from GitHub Container Registry
-
-```bash
-docker pull ghcr.io/utdevnp/gxplorer:latest
-```
-
-### Run GXplorer with Docker
-
-```bash
-docker run -p 3000:3000 ghcr.io/utdevnp/gxplorer:latest
-```
-
-Then open [http://localhost:3000](http://localhost:3000) in your browser.
-
-- All features are available in the Docker container.
-- You can connect to any Gremlin-compatible database from the running app.
 
 ---
 
