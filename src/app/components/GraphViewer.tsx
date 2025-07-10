@@ -329,9 +329,9 @@ const GraphViewer: React.FC<GraphViewerProps> = ({ data, loading, error, setSele
               selector: 'node.selected',
               style: {
                 'border-color': '#43a047',
-                'border-width': 2,
+                'border-width': 3,
                 'z-index': 20,
-                'shadow-blur': 8,
+                'shadow-blur': 64,
                 'shadow-color': '#43a047',
                 'shadow-opacity': 1,
                 'shadow-offset-x': 0,
@@ -397,8 +397,8 @@ const GraphViewer: React.FC<GraphViewerProps> = ({ data, loading, error, setSele
               style: {
                 'line-color': '#43a047',
                 'target-arrow-color': '#43a047',
-                'width': 0.7,
-                'arrow-scale': 0.3,
+                'width': 2,
+                'arrow-scale': 0.5,
                 'target-arrow-fill': 'filled',
                 'z-index': 20,
               },
@@ -425,9 +425,12 @@ const GraphViewer: React.FC<GraphViewerProps> = ({ data, loading, error, setSele
               whiteSpace: 'pre-wrap',
             }}
           >
-            <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: 12 }}>
-              {JSON.stringify(hoveredNode, null, 2)}
-            </pre>
+            <Box style={{ fontFamily: 'monospace', fontSize: 12 }}>
+              <div><b>label:</b> {hoveredNode.label ?? ''}</div>
+              {hoveredNode.name && (
+                <div><b>name:</b> {hoveredNode.name}</div>
+              )}
+            </Box>
           </Box>
         )}
       </Box>
