@@ -504,6 +504,46 @@ export default function Home() {
     localStorage.setItem('showNodeTooltips', String(showNodeTooltips));
   }, [showNodeTooltips]);
 
+  // Simple in-memory cache for vertex details
+  const vertexCache = useRef<{ [id: string]: any }>({});
+
+  // CHECKPOINT: Vertex detail fetch logic updated for Cosmos DB compatibility (ID handling and logging)
+  const [nodeDataLoading, setNodeDataLoading] = useState(false);
+  const fetchVertexDetails = async (id: string | number) => {
+    console.log('Fetching vertex details for ID:', id);
+    setTabIndex(2);
+
+    // Check cache first
+    if (vertexCache.current[id]) {
+      setSelectedNodeData(vertexCache.current[id]);
+      setNodeDataLoading(false);
+      return;
+    }
+
+    setNodeDataLoading(true);
+    if (!selectedConnectionId) return;
+    const selectedConnection = connections.find(c => c.id === selectedConnectionId);
+    if (!selectedConnection) return;
+    try {
+      const isNumericId = typeof id === 'number' || (!isNaN(Number(id)) && !/^0[0-9]+$/.test(id));
+      const idPart = isNumericId ? id : `'${id}'`;
+      const query = `g.V(${idPart}).valueMap(true)`;
+      const res = await fetch('/api/gremlin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: selectedConnection.type, query, ...selectedConnection.details }),
+      });
+      const data = await res.json();
+      console.log('Cosmos DB vertex fetch response:', data);
+      vertexCache.current[id] = data; // Store in cache
+      setSelectedNodeData(data);
+    } catch (err) {
+      setSelectedNodeData({ error: (err as Error).message });
+    } finally {
+      setNodeDataLoading(false);
+    }
+  };
+
   return (
     <ErrorBoundary logToConsole={logToConsole}>
       <Box>
@@ -727,16 +767,32 @@ export default function Home() {
                         )
                       )}
                       {tabIndex === 2 && (
-                        selectedNodeData ? (
-                          <ReactJson
-                            src={selectedNodeData}
-                            collapsed={1}
-                            name={null}
-                            enableClipboard={true}
-                            displayDataTypes={false}
-                            displayObjectSize={false}
-                            style={{ fontSize: 13 }}
-                          />
+                        nodeDataLoading ? (
+                          <Box display="flex" alignItems="center" justifyContent="center" minHeight={120}>
+                            <CircularProgress />
+                          </Box>
+                        ) : selectedNodeData ? (
+                          Array.isArray(selectedNodeData?.result?._items) && selectedNodeData.result._items.length > 0 ? (
+                            <ReactJson
+                              src={selectedNodeData.result._items[0]}
+                              collapsed={1}
+                              name={null}
+                              enableClipboard={true}
+                              displayDataTypes={false}
+                              displayObjectSize={false}
+                              style={{ fontSize: 13 }}
+                            />
+                          ) : (
+                            <ReactJson
+                              src={selectedNodeData}
+                              collapsed={1}
+                              name={null}
+                              enableClipboard={true}
+                              displayDataTypes={false}
+                              displayObjectSize={false}
+                              style={{ fontSize: 13 }}
+                            />
+                          )
                         ) : (
                           <Alert severity="info">No node selected. Click a node in the graph to view its data.</Alert>
                         )
@@ -761,9 +817,10 @@ export default function Home() {
                     error={queryError}
                     setSelectedNodeData={data => {
                       setSelectedNodeData(data);
-                      setTabIndex(2); // Switch to Node Data tab
+                      setTabIndex(2);
                     }}
                     showNodeTooltips={showNodeTooltips}
+                    onNodeClick={fetchVertexDetails}
                   />
                 ) : (
                   <Alert severity="info">No graph data to display.</Alert>
