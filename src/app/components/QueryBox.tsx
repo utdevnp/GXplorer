@@ -10,6 +10,7 @@ interface QueryBoxProps {
   queryLoading: boolean;
   queryError: string | null;
   schema: { vertexLabels: string[]; edgeLabels: string[] } | null;
+  themeMode?: 'light' | 'dark';
 }
 
 const QueryBox: React.FC<QueryBoxProps> = ({
@@ -19,9 +20,10 @@ const QueryBox: React.FC<QueryBoxProps> = ({
   queryLoading,
   queryError,
   schema,
+  themeMode = 'light',
 }) => {
   return (
-    <Box component="form" onSubmit={executeQuery} sx={{ width: '100%' }}>
+    <Box component="form" onSubmit={executeQuery} sx={{ width: '100%', background: themeMode === 'dark' ? '#23272f' : '#fff', color: themeMode === 'dark' ? '#e0e0e0' : '#222', borderRadius: 2 }}>
       <Box sx={{ width: '100%', height: 220, mb: 2 }}>
         <MonacoEditor
           width="100%"
@@ -38,6 +40,7 @@ const QueryBox: React.FC<QueryBoxProps> = ({
             scrollBeyondLastLine: false,
             automaticLayout: true,
           }}
+          theme={themeMode === 'dark' ? 'vs-dark' : 'light'}
           onMount={(editor, monaco) => {
             if (!monaco.languages.getLanguages().some((l: { id: string }) => l.id === 'gremlin')) {
               monaco.languages.register({ id: 'gremlin' });

@@ -55,6 +55,11 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import Console from './components/Console';
 import ErrorBoundary from './components/ErrorBoundary';
 import ConnectionForm from './components/ConnectionForm';
+import { ThemeProvider, createTheme } from '@mui/material/styles';
+import Brightness4Icon from '@mui/icons-material/Brightness4';
+import Brightness7Icon from '@mui/icons-material/Brightness7';
+import NodeDataTab from './components/NodeDataTab';
+import QueryResultTab from './components/QueryResultTab';
 const ReactJson = dynamic(() => import('react-json-view'), { ssr: false });
 
 const DEFAULT_SERVER_URL = 'ws://localhost:8182/gremlin';
@@ -141,7 +146,7 @@ export default function Home() {
     details?: any;
   }[]>([]);
 
-  const logContainerRef = useRef<HTMLDivElement>(null);
+  const logContainerRef = useRef<HTMLDivElement | null>(null);
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
 
   // Auto-scroll to top when console opens or logs change (newest at top)
@@ -544,304 +549,359 @@ export default function Home() {
     }
   };
 
-  return (
-    <ErrorBoundary logToConsole={logToConsole}>
-      <Box>
-        <AppBar position="sticky" elevation={0} sx={{ background: 'rgba(255,255,255,0.97)', boxShadow: 1, borderBottom: '1px solid #e0e0e0', zIndex: 1201 }}>
-          <Toolbar sx={{ flexWrap: 'wrap', gap: 2, justifyContent: 'space-between', alignItems: 'center', minHeight: 88 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mr: 4 }}>
-              {/* Burger menu */}
-              <IconButton edge="start" color="inherit" aria-label="menu" onClick={() => setDrawerOpen(open => !open)}>
-                <MenuIcon sx={{ color: 'black' }} />
-              </IconButton>
-              <Typography variant="h5" sx={{ fontWeight: 700, color: 'primary.main', letterSpacing: 1 }}>
-                GXplorer
-              </Typography>
-            </Box>
-            {/* Connection select dropdown */}
-            <Box sx={{ minWidth: 260, display: 'flex', alignItems: 'center', gap: 2 }}>
-              {connections.length === 0 ? (
-                <Button
-                  variant="contained"
-                  color="primary"
-                  onClick={() => {
-                    setDrawerOpen(true);
-                    setAddMode(true);
-                  }}
-                  fullWidth
-                >
-                  Add Connection
-                </Button>
-              ) : (
-                <FormControl fullWidth size="small">
-                  <InputLabel id="connection-select-label">Connection</InputLabel>
-                  <Select
-                    labelId="connection-select-label"
-                    value={selectedConnectionId || ''}
-                    label="Connection"
-                    onChange={e => setSelectedConnectionId(e.target.value)}
-                  >
-                    <MenuItem value="">Select Connection</MenuItem>
-                    {connections.map(conn => (
-                      <MenuItem key={conn.id} value={conn.id}>
-                        {conn.name} ({conn.type})
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              )}
-              {connectionStatus === 'loading' && (
-                <CircularProgress size={20} sx={{ ml: 1 }} />
-              )}
-              {connectionStatus === 'ok' && (
-                <FiberManualRecordIcon sx={{ color: 'green', ml: 1, fontSize: 20, verticalAlign: 'middle' }} />
-              )}
-              {connectionStatus === 'error' && (
-                <FiberManualRecordIcon sx={{ color: 'red', ml: 1, fontSize: 20, verticalAlign: 'middle' }} />
-              )}
-            </Box>
-          </Toolbar>
-        </AppBar>
-        {/* Drawer for connection management */}
-        <Drawer anchor="left" open={drawerOpen} onClose={() => { setDrawerOpen(false); setAddMode(false); }}>
-          <Box sx={{ width: 340, p: 3 ,  mt: 2}}>
-            <Typography variant="h6" gutterBottom>Connections</Typography>
-            {/* Connection list */}
-            <Box sx={{ mb: 2 }}>
-              {connections.length === 0 ? (
-                <Typography color="text.secondary">No connections saved.</Typography>
-              ) : (
-                connections.map(conn => (
-                  <Box
-                    key={conn.id}
-                    sx={{
-                      mb: 1,
-                      p: 1,
-                      borderRadius: 1,
-                      background: '#f5f5f5',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between'
-                    }}
-                  >
-                    {editConnId === conn.id ? (
-                      <ConnectionForm
-                        mode="edit"
-                        conn={editConn}
-                        setConn={setEditConn}
-                        onSave={handleSaveEditConnection}
-                        onCancel={handleCancelEdit}
-                      />
-                    ) : (
-                      <>
-                        <Box>
-                          <Typography fontWeight={600}>{conn.name}</Typography>
-                          <Typography variant="caption" color="text.secondary">{conn.type}</Typography>
-                        </Box>
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                          <Button size="small" variant="outlined" color="primary" onClick={() => handleEditConnection(conn)} aria-label="Edit connection" sx={{ minWidth: 0, p: 0.5 }}>
-                            <EditIcon fontSize="small" sx={{ fontSize: 16 }} />
-                          </Button>
-                          <Button size="small" variant="outlined" color="error" onClick={() => handleDeleteConnection(conn.id)} aria-label="Delete connection" sx={{ minWidth: 0, p: 0.5 }}>
-                            <DeleteIcon fontSize="small" sx={{ fontSize: 16 }} />
-                          </Button>
-                        </Box>
-                      </>
-                    )}
-                  </Box>
-                ))
-              )}
-            </Box>
-            {addMode ? (
-              <ConnectionForm
-                mode="add"
-                conn={newConn}
-                setConn={setNewConn}
-                onSave={handleAddConnection}
-                onCancel={() => setAddMode(false)}
-              />
-            ) : (
-              <Button variant="contained" color="primary" fullWidth onClick={() => setAddMode(true)}>
-                + Add Connection
-              </Button>
-            )}
-            {/* Settings section */}
-            <Box sx={{ mt: 4, borderTop: '1px solid #eee', pt: 2 }}>
-              <Typography variant="subtitle1" sx={{ mb: 1 }}>Settings</Typography>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={showNodeTooltips}
-                    onChange={e => setShowNodeTooltips(e.target.checked)}
-                    color="primary"
-                  />
-                }
-                label="Show Node Tooltips"
-              />
-            </Box>
-          </Box>
-        </Drawer>
-        <Box sx={{ p:4, height: 'calc(100vh - 88px)' }}>
-          <Grid container spacing={2} sx={{ height: '100%' }}>
-            <Grid item xs={6} md={6} sx={{ height: '100%' }}>
+  const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light'); // Default to light mode
+  const theme = useMemo(() => themeMode === 'dark'
+    ? createTheme({
+        palette: {
+          mode: 'dark',
+          background: {
+            default: '#181a20',
+            paper: '#23272f',
+          },
+          primary: {
+            main: '#90caf9',
+          },
+          secondary: {
+            main: '#f48fb1',
+          },
+          text: {
+            primary: '#e0e0e0',
+            secondary: '#b0b0b0',
+          },
+        },
+        typography: {
+          fontFamily: 'Inter, Roboto, Arial, sans-serif',
+          fontSize: 15,
+        },
+      })
+    : createTheme({
+        palette: { mode: 'light' },
+        typography: {
+          fontFamily: 'Inter, Roboto, Arial, sans-serif',
+          fontSize: 15,
+        },
+      })
+  , [themeMode]);
 
-              {/* Query Editor below header controls */}
-              <Paper elevation={3} sx={{ p: 3, mb: 4 }}>
-                <Typography variant="h6" gutterBottom>
-                  Query Editor
+  useEffect(() => {
+    document.body.setAttribute('data-theme', themeMode);
+  }, [themeMode]);
+
+  return (
+    <ThemeProvider theme={theme}>
+      <ErrorBoundary logToConsole={logToConsole}>
+        <Box>
+          <AppBar position="sticky" elevation={0} sx={{
+            background: themeMode === 'dark' ? 'rgba(24,26,32,0.97)' : 'rgba(255,255,255,0.97)',
+            color: themeMode === 'dark' ? '#e0e0e0' : '#222',
+            boxShadow: 1,
+            borderBottom: '1px solid #e0e0e0',
+            zIndex: 1201
+          }}>
+            <Toolbar sx={{ flexWrap: 'wrap', gap: 2, justifyContent: 'space-between', alignItems: 'center', minHeight: 88, background: 'inherit', color: 'inherit' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mr: 4 }}>
+                {/* Burger menu */}
+                <IconButton edge="start" color="inherit" aria-label="menu" onClick={() => setDrawerOpen(open => !open)}>
+                  <MenuIcon sx={{ color: themeMode === 'dark' ? '#e0e0e0' : 'black' }} />
+                </IconButton>
+                <Typography variant="h5" sx={{ fontWeight: 700, color: 'primary.main', letterSpacing: 1 }}>
+                  GXplorer
                 </Typography>
-                {/* Query History */}
-                {queryHistory.length > 0 && (
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary', display: 'flex', alignItems: 'center' }}>
-                      History
-                      {queryHistory.length > 1 && (
-                        <IconButton size="small" onClick={() => setHistoryOpen(o => !o)} sx={{ ml: 1 }}>
-                          {historyOpen ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-                        </IconButton>
-                      )}
-                    </Typography>
-                    {/* Latest history always visible */}
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      <Button
-                        key={queryHistory[0] + 'latest'}
-                        size="small"
-                        variant={queryHistory[0] === query ? 'contained' : 'outlined'}
-                        color="secondary"
-                        sx={{ fontFamily: 'monospace', textTransform: 'none', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                        onClick={() => setQuery(queryHistory[0])}
+              </Box>
+              {/* Theme switcher icon button before connection select */}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <IconButton
+                  sx={{ ml: 1 }}
+                  onClick={() => setThemeMode(themeMode === 'light' ? 'dark' : 'light')}
+                  color="inherit"
+                  aria-label="toggle theme"
+                >
+                  {themeMode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
+                </IconButton>
+                {/* Connection select dropdown */}
+                <Box sx={{ minWidth: 260, display: 'flex', alignItems: 'center', gap: 2 }}>
+                  {connections.length === 0 ? (
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      onClick={() => {
+                        setDrawerOpen(true);
+                        setAddMode(true);
+                      }}
+                      fullWidth
+                    >
+                      Add Connection
+                    </Button>
+                  ) : (
+                    <FormControl fullWidth size="small">
+                      <InputLabel id="connection-select-label">Connection</InputLabel>
+                      <Select
+                        labelId="connection-select-label"
+                        value={selectedConnectionId || ''}
+                        label="Connection"
+                        onChange={e => setSelectedConnectionId(e.target.value)}
                       >
-                        {queryHistory[0].length > 60 ? queryHistory[0].slice(0, 57) + '...' : queryHistory[0]}
-                      </Button>
-                    </Box>
-                    {/* Collapsible rest of history */}
-                    {queryHistory.length > 1 && (
-                      <Collapse in={historyOpen}>
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
-                          {queryHistory.slice(1).map((q, i) => (
-                            <Button
-                              key={q + i}
-                              size="small"
-                              variant={q === query ? 'contained' : 'outlined'}
-                              color="secondary"
-                              sx={{ fontFamily: 'monospace', textTransform: 'none', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                              onClick={() => setQuery(q)}
-                            >
-                              {q.length > 60 ? q.slice(0, 57) + '...' : q}
-                            </Button>
-                          ))}
-                        </Box>
-                      </Collapse>
-                    )}
-                  </Box>
-                )}
-                <QueryBox
-                  query={query}
-                  setQuery={setQuery}
-                  executeQuery={executeQuery}
-                  queryLoading={queryLoading}
-                  queryError={queryError}
-                  schema={schema}
-                />
-              </Paper>
-              {/* Panels below */}
-              <Box display={{ xs: 'block', md: 'flex' }} gap={3}>
-                {/* Left Panel: Editor & Controls */}
-                <Box flex={1.3} minWidth={420}>
-                  <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
-                    {/* Tabs for Query Result, Schema, Node Data */}
-                    <Tabs value={tabIndex} onChange={(_, v) => setTabIndex(v)} aria-label="Result Tabs">
-                      <Tab label="Query Result" />
-                      <Tab label="Schema" />
-                      <Tab label="Node Data" />
-                    </Tabs>
-                    <Box sx={{ mt: 2 }}>
-                      {tabIndex === 0 && <QueryResult queryResult={queryResult} />}
-                      {tabIndex === 1 && (
-                        loading ? (
-                          <Box display="flex" alignItems="center" justifyContent="center" minHeight={120}>
-                            <CircularProgress />
-                          </Box>
-                        ) : (
-                          <SchemaBox schema={schema} />
-                        )
-                      )}
-                      {tabIndex === 2 && (
-                        nodeDataLoading ? (
-                          <Box display="flex" alignItems="center" justifyContent="center" minHeight={120}>
-                            <CircularProgress />
-                          </Box>
-                        ) : selectedNodeData ? (
-                          Array.isArray(selectedNodeData?.result?._items) && selectedNodeData.result._items.length > 0 ? (
-                            <ReactJson
-                              src={selectedNodeData.result._items[0]}
-                              collapsed={1}
-                              name={null}
-                              enableClipboard={true}
-                              displayDataTypes={false}
-                              displayObjectSize={false}
-                              style={{ fontSize: 13 }}
-                            />
-                          ) : (
-                            <ReactJson
-                              src={selectedNodeData}
-                              collapsed={1}
-                              name={null}
-                              enableClipboard={true}
-                              displayDataTypes={false}
-                              displayObjectSize={false}
-                              style={{ fontSize: 13 }}
-                            />
-                          )
-                        ) : (
-                          <Alert severity="info">No node selected. Click a node in the graph to view its data.</Alert>
-                        )
-                      )}
-                    </Box>
-                  </Paper>
+                        <MenuItem value="">Select Connection</MenuItem>
+                        {connections.map(conn => (
+                          <MenuItem key={conn.id} value={conn.id}>
+                            {conn.name} ({conn.type})
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  )}
+                  {connectionStatus === 'loading' && (
+                    <CircularProgress size={20} sx={{ ml: 1 }} />
+                  )}
+                  {connectionStatus === 'ok' && (
+                    <FiberManualRecordIcon sx={{ color: 'green', ml: 1, fontSize: 20, verticalAlign: 'middle' }} />
+                  )}
+                  {connectionStatus === 'error' && (
+                    <FiberManualRecordIcon sx={{ color: 'red', ml: 1, fontSize: 20, verticalAlign: 'middle' }} />
+                  )}
                 </Box>
               </Box>
-
-            </Grid>
-            <Grid item xs={6} md={6} sx={{ height: '100%' }}>
-
-              <Box sx={{ height: '100%' }}>
-                {queryLoading ? (
-                  <Box display="flex" justifyContent="center" alignItems="center" minHeight={300}><CircularProgress /></Box>
-                ) : queryError ? (
-                  <Alert severity="error">{queryError}</Alert>
-                ) : queryResult && (Array.isArray(queryResult) ? queryResult.length > 0 : typeof queryResult === 'object' && Object.keys(queryResult).length > 0) ? (
-                  <GraphViewer
-                    data={queryResult}
-                    loading={queryLoading}
-                    error={queryError}
-                    setSelectedNodeData={data => {
-                      setSelectedNodeData(data);
-                      setTabIndex(2);
-                    }}
-                    showNodeTooltips={showNodeTooltips}
-                    onNodeClick={fetchVertexDetails}
-                  />
+            </Toolbar>
+          </AppBar>
+          {/* Drawer for connection management */}
+          <Drawer
+            anchor="left"
+            open={drawerOpen}
+            onClose={() => setDrawerOpen(false)}
+            sx={{
+              '& .MuiDrawer-paper': {
+                backgroundColor: themeMode === 'dark' ? '#23272f' : '#fff',
+                color: themeMode === 'dark' ? '#e0e0e0' : '#222',
+              },
+            }}
+          >
+            <Box sx={{ width: 340, p: 3 ,  mt: 2 }}>
+              <Typography variant="h6" gutterBottom sx={{ color: themeMode === 'dark' ? '#e0e0e0' : '#222' }}>Connections</Typography>
+              {/* Connection list */}
+              <Box sx={{ mt: 2 }}>
+                {connections.length === 0 ? (
+                  <Typography color="text.secondary">No connections saved.</Typography>
                 ) : (
-                  <Alert severity="info">No graph data to display.</Alert>
+                  connections.map((conn) => (
+                    <Box
+                      key={conn.id}
+                      sx={{
+                        mb: 1.5,
+                        p: 1.5,
+                        borderRadius: 1,
+                        background: themeMode === 'dark' ? '#181a20' : '#f5f5f5',
+                        color: themeMode === 'dark' ? '#e0e0e0' : '#222',
+                        fontFamily: 'monospace',
+                        fontSize: 15,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        transition: 'background 0.2s',
+                        cursor: 'pointer',
+                        '&:hover': { background: themeMode === 'dark' ? '#23272f' : '#ececec' },
+                      }}
+                    >
+                      <Box>
+                        <Typography fontWeight={600}>{conn.name}</Typography>
+                        <Typography variant="caption" color="text.secondary">{conn.type}</Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button size="small" variant="outlined" color="primary" onClick={() => handleEditConnection(conn)} aria-label="Edit connection" sx={{ minWidth: 0, p: 0.5 }}>
+                          <EditIcon fontSize="small" sx={{ fontSize: 16 }} />
+                        </Button>
+                        <Button size="small" variant="outlined" color="error" onClick={() => handleDeleteConnection(conn.id)} aria-label="Delete connection" sx={{ minWidth: 0, p: 0.5 }}>
+                          <DeleteIcon fontSize="small" sx={{ fontSize: 16 }} />
+                        </Button>
+                      </Box>
+                    </Box>
+                  ))
                 )}
               </Box>
+              {addMode ? (
+                <ConnectionForm
+                  mode="add"
+                  conn={newConn}
+                  setConn={setNewConn}
+                  onSave={handleAddConnection}
+                  onCancel={() => setAddMode(false)}
+                />
+              ) : editConnId ? (
+                <Box sx={{ width: '100%', maxWidth: '100%' }}>
+                  <ConnectionForm
+                    mode="edit"
+                    conn={editConn}
+                    setConn={setEditConn}
+                    onSave={handleSaveEditConnection}
+                    onCancel={handleCancelEdit}
+                  />
+                </Box>
+              ) : (
+                <Button variant="contained" color="primary" fullWidth onClick={() => setAddMode(true)}>
+                  + Add Connection
+                </Button>
+              )}
+              {/* Settings section */}
+              <Box sx={{ mt: 4, borderTop: '1px solid #eee', pt: 2 }}>
+                <Typography variant="subtitle1" sx={{ mb: 1 }}>Settings</Typography>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={showNodeTooltips}
+                      onChange={e => setShowNodeTooltips(e.target.checked)}
+                      color="primary"
+                    />
+                  }
+                  label="Show Node Tooltips"
+                />
+              </Box>
+            </Box>
+          </Drawer>
+          <Box sx={{ p:4, height: 'calc(100vh - 88px)', background: themeMode === 'dark' ? '#181a20' : '#fafbfc', color: themeMode === 'dark' ? '#e0e0e0' : '#222' }}>
+            <Grid container spacing={2} sx={{ height: '100%' }}>
+              <Grid item xs={6} md={6} sx={{ height: '100%' }}>
 
+                {/* Query Editor below header controls */}
+                <Paper elevation={3} sx={{ p: 3, mb: 4, background: themeMode === 'dark' ? '#23272f' : '#fff', color: themeMode === 'dark' ? '#e0e0e0' : '#222' }}>
+                  <Typography variant="h6" gutterBottom>
+                    Query Editor
+                  </Typography>
+                  {/* Query History */}
+                  {queryHistory.length > 0 && (
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary', display: 'flex', alignItems: 'center' }}>
+                        History
+                        {queryHistory.length > 1 && (
+                          <IconButton size="small" onClick={() => setHistoryOpen(o => !o)} sx={{ ml: 1 }}>
+                            {historyOpen ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                          </IconButton>
+                        )}
+                      </Typography>
+                      {/* Latest history always visible */}
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        <Button
+                          key={queryHistory[0] + 'latest'}
+                          size="small"
+                          variant={queryHistory[0] === query ? 'contained' : 'outlined'}
+                          color="secondary"
+                          sx={{ fontFamily: 'monospace', textTransform: 'none', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                          onClick={() => setQuery(queryHistory[0])}
+                        >
+                          {queryHistory[0].length > 60 ? queryHistory[0].slice(0, 57) + '...' : queryHistory[0]}
+                        </Button>
+                      </Box>
+                      {/* Collapsible rest of history */}
+                      {queryHistory.length > 1 && (
+                        <Collapse in={historyOpen}>
+                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+                            {queryHistory.slice(1).map((q, i) => (
+                              <Button
+                                key={q + i}
+                                size="small"
+                                variant={q === query ? 'contained' : 'outlined'}
+                                color="secondary"
+                                sx={{ fontFamily: 'monospace', textTransform: 'none', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                onClick={() => setQuery(q)}
+                              >
+                                {q.length > 60 ? q.slice(0, 57) + '...' : q}
+                              </Button>
+                            ))}
+                          </Box>
+                        </Collapse>
+                      )}
+                    </Box>
+                  )}
+                  <QueryBox
+                    query={query}
+                    setQuery={setQuery}
+                    executeQuery={executeQuery}
+                    queryLoading={queryLoading}
+                    queryError={queryError}
+                    schema={schema}
+                    themeMode={themeMode}
+                  />
+                </Paper>
+                {/* Panels below */}
+                <Box display={{ xs: 'block', md: 'flex' }} gap={3}>
+                  {/* Left Panel: Editor & Controls */}
+                  <Box flex={1.3} minWidth={420}>
+                    <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
+                      {/* Tabs for Query Result, Schema, Node Data */}
+                      <Tabs value={tabIndex} onChange={(_, v) => setTabIndex(v)} aria-label="Result Tabs">
+                        <Tab label="Query Result" />
+                        <Tab label="Schema" />
+                        <Tab label="Node Data" />
+                      </Tabs>
+                      <Box sx={{ mt: 2 }}>
+                        {tabIndex === 0 && (
+                          <QueryResultTab
+                            queryResult={queryResult}
+                            queryLoading={queryLoading}
+                            themeMode={themeMode}
+                          />
+                        )}
+                        {tabIndex === 1 && (
+                          loading ? (
+                            <Box display="flex" alignItems="center" justifyContent="center" minHeight={120}>
+                              <CircularProgress />
+                            </Box>
+                          ) : (
+                            <SchemaBox schema={schema} />
+                          )
+                        )}
+                        {tabIndex === 2 && (
+                          <NodeDataTab
+                            selectedNodeData={selectedNodeData}
+                            nodeDataLoading={nodeDataLoading}
+                            themeMode={themeMode}
+                          />
+                        )}
+                      </Box>
+                    </Paper>
+                  </Box>
+                </Box>
+
+              </Grid>
+              <Grid item xs={6} md={6} sx={{ height: '100%' }}>
+
+                <Box sx={{ height: '100%' }}>
+                  {queryLoading ? (
+                    <Box display="flex" justifyContent="center" alignItems="center" minHeight={300}><CircularProgress /></Box>
+                  ) : queryError ? (
+                    <Alert severity="error">{queryError}</Alert>
+                  ) : queryResult && (Array.isArray(queryResult) ? queryResult.length > 0 : typeof queryResult === 'object' && Object.keys(queryResult).length > 0) ? (
+                    <GraphViewer
+                      data={queryResult}
+                      loading={queryLoading}
+                      error={queryError}
+                      setSelectedNodeData={data => {
+                        setSelectedNodeData(data);
+                        setTabIndex(2);
+                      }}
+                      showNodeTooltips={showNodeTooltips}
+                      onNodeClick={fetchVertexDetails}
+                    />
+                  ) : (
+                    <Alert severity="info">No graph data to display.</Alert>
+                  )}
+                </Box>
+
+              </Grid>
             </Grid>
-          </Grid>
 
+          </Box>
+          {/* Bottom Console Panel */}
+          <Console
+            logs={consoleLogs}
+            expandedLogId={expandedLogId}
+            setExpandedLogId={setExpandedLogId}
+            open={consoleOpen}
+            setOpen={setConsoleOpen}
+            logContainerRef={logContainerRef as React.RefObject<HTMLDivElement>}
+            themeMode={themeMode}
+          />
         </Box>
-        {/* Bottom Console Panel */}
-        <Console
-          logs={consoleLogs}
-          expandedLogId={expandedLogId}
-          setExpandedLogId={setExpandedLogId}
-          open={consoleOpen}
-          setOpen={setConsoleOpen}
-          logContainerRef={logContainerRef}
-        />
-      </Box>
-    </ErrorBoundary>
+      </ErrorBoundary>
+    </ThemeProvider>
   );
 }
 
