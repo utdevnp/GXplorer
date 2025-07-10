@@ -232,6 +232,17 @@ const GraphViewer: React.FC<GraphViewerProps> = ({ data, loading, error, setSele
     }
   };
 
+  // Detect dark mode from document body attribute (set by main app)
+  const [isDarkMode, setIsDarkMode] = React.useState(false);
+  React.useEffect(() => {
+    setIsDarkMode(document.body.getAttribute('data-theme') === 'dark');
+    const observer = new MutationObserver(() => {
+      setIsDarkMode(document.body.getAttribute('data-theme') === 'dark');
+    });
+    observer.observe(document.body, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
+
   if (loading) {
     return <Box display="flex" justifyContent="center" alignItems="center" minHeight={300}><CircularProgress /></Box>;
   }
@@ -258,7 +269,7 @@ const GraphViewer: React.FC<GraphViewerProps> = ({ data, loading, error, setSele
         <CytoscapeComponent
           cy={(cy: any) => { cyRef.current = cy; }}
           elements={elements}
-          style={{ width: '100%', height: '100%', background: '#000000' }}
+          style={{ width: '100%', height: '100%', background: isDarkMode ? '#181a20' : '#fafbfc' }}
           layout={{ name: 'cose', padding: 60 }}
           stylesheet={[
             // Node: only show label (no id)
@@ -273,14 +284,19 @@ const GraphViewer: React.FC<GraphViewerProps> = ({ data, loading, error, setSele
                 'text-halign': 'center',
                 'font-size': 3,
                 'font-family': 'system-ui, sans-serif',
+                'font-weight': 700,
                 'width': 22,
                 'height': 22,
                 'shape': 'ellipse',
                 'color': '#fff',
                 'text-outline-width': 0,
+                'text-background-color': '#e74c3c',
+                'text-background-opacity': 1,
+                'text-background-shape': 'roundrectangle',
+                'text-background-padding': 2,
                 'transition-property': 'width, height, box-shadow, border-color, opacity',
                 'transition-duration': '0.3s',
-                'text-margin-y': 3,
+                'text-margin-y': 0,
                 'opacity': 0,
                 'transition-timing-function': 'ease',
                 'text-wrap': 'none',
@@ -312,11 +328,11 @@ const GraphViewer: React.FC<GraphViewerProps> = ({ data, loading, error, setSele
             {
               selector: 'node.selected',
               style: {
-                'border-color': '#8e24aa',
-                'border-width': 2,
+                'border-color': '#43a047',
+                'border-width': 3,
                 'z-index': 20,
-                'shadow-blur': 8,
-                'shadow-color': '#8e24aa',
+                'shadow-blur': 64,
+                'shadow-color': '#43a047',
                 'shadow-opacity': 1,
                 'shadow-offset-x': 0,
                 'shadow-offset-y': 0,
@@ -326,24 +342,25 @@ const GraphViewer: React.FC<GraphViewerProps> = ({ data, loading, error, setSele
             {
               selector: 'edge',
               style: {
-                width: 1,
-                'line-color': '#e0e0e0',
-                'target-arrow-color': '#e0e0e0',
+                width: 0.5,
+                'line-color': isDarkMode ? '#dedede' : '#43a047',
+                'target-arrow-color': isDarkMode ? '#dedede' : '#43a047',
                 'target-arrow-shape': 'triangle',
-                'target-arrow-fill': 'hollow',
-                'arrow-scale': 0.5,
+                'target-arrow-fill': 'filled',
+                'arrow-scale': 0.3,
                 'curve-style': 'bezier',
                 label: 'data(label)',
-                'font-size': 4,
+                'font-size': isDarkMode ? 4 : 4,
                 'font-family': 'system-ui, sans-serif',
-                'font-weight': 400,
-                'color': '#fff',
-                'text-background-opacity': 0,
-                'text-background-padding': 0,
+                'font-weight': isDarkMode ? 400 : 600,
+                'color': isDarkMode ? '#fff' : '#222',
+                'text-background-opacity': isDarkMode ? 0 : 0.7,
+                'text-background-color': isDarkMode ? undefined : '#fff',
+                'text-background-padding': isDarkMode ? 0 : 2,
                 'text-rotation': 'autorotate',
-                'text-margin-y': -4,
+                'text-margin-y': isDarkMode ? -4 : -6,
                 'letter-spacing': 0.2,
-                'text-shadow': '0 1px 2px #888',
+                'text-shadow': isDarkMode ? '0 1px 2px #888' : '0 1px 2px #fff',
                 'opacity': 0,
                 'transition-property': 'line-color, width, opacity',
                 'transition-duration': '0.7s',
@@ -364,19 +381,25 @@ const GraphViewer: React.FC<GraphViewerProps> = ({ data, loading, error, setSele
             {
               selector: 'edge:hover',
               style: {
-                width: 2.2,
+                width: 0.7,
                 'opacity': 1,
                 'z-index': 10,
                 'cursor': 'pointer',
+                'line-color': isDarkMode ? '#dedede' : '#1976d2',
+                'target-arrow-color': isDarkMode ? '#dedede' : '#1976d2',
+                'arrow-scale': 0.3,
+                'target-arrow-fill': 'filled',
               },
             },
             // Edge: selected effect - purple color
             {
               selector: 'edge.selected',
               style: {
-                'line-color': '#8e24aa',
-                'target-arrow-color': '#8e24aa',
-                'width': 2.2,
+                'line-color': '#43a047',
+                'target-arrow-color': '#43a047',
+                'width': 2,
+                'arrow-scale': 0.5,
+                'target-arrow-fill': 'filled',
                 'z-index': 20,
               },
             },
@@ -402,9 +425,12 @@ const GraphViewer: React.FC<GraphViewerProps> = ({ data, loading, error, setSele
               whiteSpace: 'pre-wrap',
             }}
           >
-            <pre style={{ margin: 0, fontFamily: 'monospace', fontSize: 12 }}>
-              {JSON.stringify(hoveredNode, null, 2)}
-            </pre>
+            <Box style={{ fontFamily: 'monospace', fontSize: 12 }}>
+              <div><b>label:</b> {hoveredNode.label ?? ''}</div>
+              {hoveredNode.name && (
+                <div><b>name:</b> {hoveredNode.name}</div>
+              )}
+            </Box>
           </Box>
         )}
       </Box>
