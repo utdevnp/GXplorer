@@ -10,6 +10,7 @@ interface GraphViewerProps {
   error?: string | null;
   setSelectedNodeData?: (data: any) => void;
   showNodeTooltips?: boolean;
+  onNodeClick?: (id: string) => void;
 }
 
 const labelColorPalette: string[] = [
@@ -121,7 +122,8 @@ const getElementsFromData = (data: any): any[] => {
       color: getColorForLabel(label),
       ...Object.fromEntries(
         Object.entries(item.properties as any || {}).map(([k, v]: [string, any]) => [k, v?.[0]?.value ?? ''])
-      )
+      ),
+      rawProperties: item.properties // Attach the full properties object
     };
     return {
       data: {
@@ -150,7 +152,7 @@ const getElementsFromData = (data: any): any[] => {
   return [...nodeElements, ...edgeElements];
 };
 
-const GraphViewer: React.FC<GraphViewerProps> = ({ data, loading, error, setSelectedNodeData, showNodeTooltips = true }) => {
+const GraphViewer: React.FC<GraphViewerProps> = ({ data, loading, error, setSelectedNodeData, showNodeTooltips = true, onNodeClick }) => {
   const elements = useMemo(() => {
     if (!data) return [];
     const result = getElementsFromData(data);
@@ -176,6 +178,7 @@ const GraphViewer: React.FC<GraphViewerProps> = ({ data, loading, error, setSele
   }, [elements]);
 
   // Add Cytoscape event listeners for hover and click
+  // CHECKPOINT: useEffect dependency array order and size fixed for React compliance
   useEffect(() => {
     if (!cyRef.current) return;
     const cy = cyRef.current;
@@ -192,13 +195,14 @@ const GraphViewer: React.FC<GraphViewerProps> = ({ data, loading, error, setSele
     };
     const handleClick = (evt: any) => {
       const ele = evt.target;
-      // Remove 'selected' class from all nodes and edges
       cy.elements().removeClass('selected');
-      // Add 'selected' class to the clicked element
       ele.addClass('selected');
-      // Track selected element
       setSelectedElement({ id: ele.id(), group: ele.isNode() ? 'nodes' : 'edges' });
-      if (setSelectedNodeData) setSelectedNodeData(ele.data());
+      if (ele.isNode() && onNodeClick) {
+        onNodeClick(ele.data().id);
+      } else if (setSelectedNodeData) {
+        setSelectedNodeData(ele.data());
+      }
     };
     cy.on('mouseover', 'node', handleMouseOver);
     cy.on('mouseout', 'node', handleMouseOut);
@@ -208,7 +212,7 @@ const GraphViewer: React.FC<GraphViewerProps> = ({ data, loading, error, setSele
       cy.off('mouseout', 'node', handleMouseOut);
       cy.off('tap', 'node,edge', handleClick);
     };
-  }, [cyRef.current, setSelectedNodeData]);
+  }, [cyRef.current, setSelectedNodeData, onNodeClick]); // Always 3 dependencies, same order
 
   const handleResetView = () => {
     if (cyRef.current) {
